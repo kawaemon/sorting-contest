@@ -1,5 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
-use rand::Rng;
+use rand::{thread_rng, Rng};
+
 use std::ffi::c_int;
 use std::time::Instant;
 
@@ -17,7 +18,7 @@ fn bench_caller(c: &mut Criterion, data_size: i32) {
         &format!("mysort n = {data_size}",),
         move |bencher: &mut Bencher| {
             bencher.iter_custom(|iterations| {
-                let mut rng = rand::thread_rng();
+                let mut rng = thread_rng();
                 let mut bench_data = (0..iterations)
                     .map(|_| {
                         let mut data = (0..data_size).collect::<Vec<_>>();
@@ -65,4 +66,21 @@ fn test_mysort() {
         test([10, 9, 8, 7, 6, 5, 4, 3, 2, 1]),
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     );
+
+    let mut rng = thread_rng();
+
+    // fuzz
+    for _ in 0..100 {
+        let mut data = (0..100).collect::<Vec<_>>();
+        rng.fill(data.as_mut_slice());
+        mysort(&mut data);
+
+        let mut before = data[0];
+        for &d in &data[1..] {
+            if before > d {
+                panic!("{:?}", data);
+            }
+            before = d;
+        }
+    }
 }

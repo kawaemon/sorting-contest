@@ -1,7 +1,4 @@
-mysort n = 100          time:   [17.610 µs 17.646 µs 17.691 µs]
-Found 8 outliers among 100 measurements (8.00%)
-  7 (7.00%) high mild
-  1 (1.00%) high severe
+mysort n = 100          time:   [11.010 µs 11.040 µs 11.079 µs]
 
-mysort n = 10000        time:   [162.21 ms 163.81 ms 165.47 ms]
+mysort n = 10000        time:   [108.00 ms 108.33 ms 108.69 ms]
 

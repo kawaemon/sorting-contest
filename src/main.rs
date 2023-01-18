@@ -4,6 +4,15 @@ use rand::{thread_rng, Rng};
 use std::ffi::c_int;
 use std::time::Instant;
 
+fn insertion_sort(data: &mut [c_int]) {
+    extern "C" {
+        fn insertion_sort(data: *mut c_int, len: c_int);
+    }
+    unsafe {
+        insertion_sort(data.as_mut_ptr(), data.len() as i32);
+    }
+}
+
 fn mysort(data: &mut [c_int]) {
     extern "C" {
         fn mysort(data: *mut c_int, len: c_int);
@@ -41,29 +50,42 @@ fn bench_caller(c: &mut Criterion, data_size: i32) {
 fn bench(c: &mut Criterion) {
     bench_caller(c, 100);
     bench_caller(c, 10_000);
-    // skipped, too slow.
-    // bench_caller(c, 100_000);
+    bench_caller(c, 100_000);
 }
 
 criterion_group!(benches, bench);
 criterion_main!(benches);
 
+
 #[test]
-fn test_mysort() {
+fn insertion_sort_test() {
+    test_sort(insertion_sort);
+}
+
+#[test]
+fn mysort_test() {
+    test_sort(mysort)
+}
+
+fn test_sort(sort_fn: fn(&mut [i32])) {
     use pretty_assertions::assert_eq;
-    fn test<const N: usize>(mut s: [i32; N]) -> [i32; N] {
-        mysort(&mut s);
-        s
+
+    macro_rules! test {
+        ($array:expr) => {{
+            let mut a = $array;
+            sort_fn(&mut a);
+            a
+        }};
     }
 
     let empty: [i32; 0] = []; // type inference fails
-    assert_eq!(test(empty), empty);
+    assert_eq!(test!(empty), empty);
 
-    assert_eq!(test([0]), [0]);
-    assert_eq!(test([1, 2]), [1, 2]);
-    assert_eq!(test([5, 8, 9, 3, 5]), [3, 5, 5, 8, 9]);
+    assert_eq!(test!([0]), [0]);
+    assert_eq!(test!([1, 2]), [1, 2]);
+    assert_eq!(test!([5, 8, 9, 3, 5]), [3, 5, 5, 8, 9]);
     assert_eq!(
-        test([10, 9, 8, 7, 6, 5, 4, 3, 2, 1]),
+        test!([10, 9, 8, 7, 6, 5, 4, 3, 2, 1]),
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     );
 
@@ -71,16 +93,14 @@ fn test_mysort() {
 
     // fuzz
     for _ in 0..100 {
-        let mut data = (0..100).collect::<Vec<_>>();
+        let mut data = (0..300).collect::<Vec<_>>();
         rng.fill(data.as_mut_slice());
-        mysort(&mut data);
 
-        let mut before = data[0];
-        for &d in &data[1..] {
-            if before > d {
-                panic!("{:?}", data);
-            }
-            before = d;
-        }
+        let mut origin = data.clone();
+        origin.sort_unstable();
+
+        sort_fn(&mut data);
+
+        assert_eq!(data, origin);
     }
 }

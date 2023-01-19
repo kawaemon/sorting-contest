@@ -72,7 +72,10 @@ void quicksort(int *data, int len) {
         return;
     }
 
-    // select pivot
+    // ピボットを選択する
+    // `median-of-three` と呼ばれる手法が有効とされているが
+    // 今回はデータが完全ランダムで偏りがないため
+    // どこを選んでも有意な差はない。今回は常に中心を選ぶ。
     int pivot_index = len / 2;
 
     // partition

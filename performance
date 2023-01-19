@@ -1,6 +1,6 @@
-mysort n = 100          time:   [1.6400 µs 1.6462 µs 1.6544 µs]
+mysort n = 100          time:   [1.7206 µs 1.7255 µs 1.7324 µs]
 
-mysort n = 10000        time:   [360.66 µs 361.93 µs 363.80 µs]
+mysort n = 10000        time:   [363.09 µs 364.54 µs 366.47 µs]
 
-mysort n = 100000       time:   [4.6396 ms 4.6488 ms 4.6601 ms]
+mysort n = 100000       time:   [4.6636 ms 4.6727 ms 4.6835 ms]
 

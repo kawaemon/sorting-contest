@@ -1,7 +1,8 @@
-#define __STDC_FORMAT_MACROS
-#include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
+
+// ベンチマークにより最適な値を決定。
+#define INSERTION_SORT_THRESHOLD 50
 
 #define SWAP(array, i, j)        \
     {                            \
@@ -10,9 +11,9 @@
         (array)[j] = tmp;        \
     }
 
-#ifdef DEBUG
+#ifdef DEBUG_ENABLED
 #define DEBUG(...) printf(__VA_ARGS__);
-#define SHOW_ARRAY(array, len)                                  \
+#define DEBUG_ARRAY(array, len)                                 \
     {                                                           \
         printf("[");                                            \
         for (int i = 0; i < len; i++) printf("%d, ", array[i]); \
@@ -46,8 +47,8 @@ void insertion_sort(int *data, int n) {
     }
 }
 
+// https://en.wikipedia.org/wiki/Quicksort
 void quicksort(int *data, int len) {
-    DEBUG("data = %p, len = %d\n", data, len);
     // select 7 as pivot
     // 8 4 3 7 6 5 2 1
     // ↑ HI          ↑ LO  swap
@@ -58,7 +59,16 @@ void quicksort(int *data, int len) {
     // 1 4 3 2 6 5 | 7 8
     //        LO ↑   ↑ HI
 
+    // ソートの意味なし
     if (len < 2) {
+        return;
+    }
+
+    // 十分にソート対象の配列が小さい場合は
+    // より高速な挿入ソートを用いてソートする。
+    // 最適な切り替えタイミングは実測にて特定。
+    if (len < INSERTION_SORT_THRESHOLD) {
+        insertion_sort(data, len);
         return;
     }
 
@@ -69,22 +79,19 @@ void quicksort(int *data, int len) {
     int hi_index = -1;
     int lo_index = len;
     int pivot = data[pivot_index];
-    DEBUG_ARRAY(data, len);
-    DEBUG("pivot: %d\n", pivot);
     while (true) {
-        DEBUG("begin: hi = %d, low = %d\n", hi_index, lo_index);
         while (hi_index++ < len && data[hi_index] < pivot)
             ;
         while (lo_index-- >= 0 && data[lo_index] > pivot)
             ;
-        DEBUG("end: hi = %d, low = %d\n", hi_index, lo_index);
         if (lo_index <= hi_index) {
             break;
         }
         SWAP(data, hi_index, lo_index);
     }
 
-    DEBUG("len = %d, hi = %d, low = %d, part = %d", len, hi_index, lo_index);
+    // 短い方だけに再帰するほうが使うスペースが節約できるが
+    // 速度に影響はないので行わない。
     quicksort(data, hi_index);
     quicksort(data + hi_index, len - hi_index);
 }
@@ -92,10 +99,5 @@ void quicksort(int *data, int len) {
 void mysort(int *s, int n) {
     int *data = s;
     int len = n;
-
-    // ソートの意味なし
-    if (len < 1) return;
-
-    // insertion_sort(data, len);
     quicksort(data, len);
 }

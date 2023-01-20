@@ -1,29 +1,12 @@
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
 use rand::{thread_rng, Rng};
-
+use sorting_contest::mysort;
 use std::ffi::c_int;
+
 use std::time::Instant;
 
 // taken from MSVC
 const RAND_MAX: c_int = 32767;
-
-fn insertion_sort(data: &mut [c_int]) {
-    extern "C" {
-        fn insertion_sort(data: *mut c_int, len: c_int);
-    }
-    unsafe {
-        insertion_sort(data.as_mut_ptr(), data.len() as i32);
-    }
-}
-
-fn mysort(data: &mut [c_int]) {
-    extern "C" {
-        fn mysort(data: *mut c_int, len: c_int);
-    }
-    unsafe {
-        mysort(data.as_mut_ptr(), data.len() as i32);
-    }
-}
 
 fn bench_caller(c: &mut Criterion, data_size: i32) {
     c.bench_function(
@@ -61,17 +44,18 @@ fn bench(c: &mut Criterion) {
 criterion_group!(benches, bench);
 criterion_main!(benches);
 
-
 #[test]
 fn insertion_sort_test() {
-    test_sort(insertion_sort);
+    test_sort(sorting_contest::insertion_sort);
 }
 
+#[cfg(test)]
 #[test]
 fn mysort_test() {
     test_sort(mysort)
 }
 
+#[cfg(test)]
 fn test_sort(sort_fn: fn(&mut [i32])) {
     use pretty_assertions::assert_eq;
 
@@ -83,7 +67,7 @@ fn test_sort(sort_fn: fn(&mut [i32])) {
         }};
     }
 
-    let empty: [i32; 0] = []; // type inference fails
+    let empty: [c_int; 0] = []; // type inference fails
     assert_eq!(test!(empty), empty);
 
     assert_eq!(test!([0]), [0]);
@@ -97,15 +81,14 @@ fn test_sort(sort_fn: fn(&mut [i32])) {
     let mut rng = thread_rng();
 
     // fuzz
-    for _ in 0..100 {
-        let mut data = (0..300).collect::<Vec<_>>();
-        rng.fill(data.as_mut_slice());
+    let mut data = (0..3000).collect::<Vec<c_int>>();
+    rng.fill(data.as_mut_slice());
 
-        let mut origin = data.clone();
-        origin.sort_unstable();
+    let mut origin = data.clone();
+    origin.sort_unstable();
 
-        sort_fn(&mut data);
+    println!("{:?}", data);
+    sort_fn(&mut data);
 
-        assert_eq!(data, origin);
-    }
+    assert_eq!(data, origin);
 }

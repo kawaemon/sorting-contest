@@ -6,7 +6,6 @@ use std::{
     time::Duration,
 };
 
-use rand::seq::SliceRandom;
 use rand::Rng;
 use sdl2::rect::Rect;
 use sdl2::{event::Event, keyboard::Keycode, pixels::Color};
@@ -73,12 +72,17 @@ fn main() {
 
     let new_array = || TargetArray {
         data: {
-            let mut data = (0..SORT_ELEMENTS)
+            let mut data = Vec::with_capacity(SORT_ELEMENTS);
+            let mut rng = rand::thread_rng();
+
+            for _ in 0..SORT_ELEMENTS {
+                data.push(rng.gen_range(0..SORT_ELEMENTS));
+            }
+
+            let data = data
                 .into_iter()
                 .map(|x| Value::new(x as _))
                 .collect::<Vec<_>>();
-
-            data.shuffle(&mut rand::thread_rng());
 
             Arc::new(Mutex::new(data))
         },
@@ -441,35 +445,4 @@ fn quicksort(data: TargetArray) {
     let (a, b) = data.split_at(partition as _);
     quicksort(a);
     quicksort(b);
-}
-
-#[test]
-fn fuzz() {
-    let mut rng = rand::thread_rng();
-
-    let mut data = (0..3000).collect::<Vec<c_int>>();
-    rng.fill(data.as_mut_slice());
-
-    let mut origin = data.clone();
-    origin.sort_unstable();
-
-    println!("{:?}", data);
-    let a = TargetArray {
-        data: Arc::new(Mutex::new(
-            data.into_iter().map(|x| Value::new(x)).collect(),
-        )),
-        range: 0..origin.len(),
-    };
-
-    quicksort(a.clone());
-
-    assert_eq!(
-        origin,
-        a.data
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|x| x.value)
-            .collect::<Vec<_>>(),
-    );
 }

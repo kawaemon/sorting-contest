@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use std::collections::HashMap;
 use std::ops::{Deref, Range};
 use std::{
     ffi::c_int,
@@ -6,6 +7,8 @@ use std::{
     time::Duration,
 };
 
+use fontconfig::Fontconfig;
+use rand::distributions::Standard;
 use rand::Rng;
 use sdl2::rect::Rect;
 use sdl2::{event::Event, keyboard::Keycode, pixels::Color};
@@ -53,22 +56,40 @@ impl Value {
     }
 }
 
-const SORT_ELEMENTS: usize = 1500;
+#[derive(Clone, Debug)]
+struct Context {
+    phase_name: Arc<Mutex<String>>,
+}
+
+impl Context {
+    fn set_phase(&self, phase: impl Into<String>) {
+        *self.phase_name.lock().unwrap() = phase.into();
+    }
+}
+
+const SORT_ELEMENTS: usize = 3000;
 const MARK_SHOWN_FRAMES: usize = 5;
-const MEM_OP_DELAY: Duration = Duration::from_micros(250);
+const MEM_OP_DELAY: Duration = Duration::from_nanos(1000000);
 
 fn main() {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
+    let ttf_context = sdl2::ttf::init().unwrap();
 
     let window = video_subsystem
-        .window("rust-sdl2 demo", 1500, 600)
+        .window("visualize", 1500, 600)
         .position_centered()
         .resizable()
         .build()
         .unwrap();
 
     let mut canvas = window.into_canvas().build().unwrap();
+    let texture_creator = canvas.texture_creator();
+
+    let fontconfig = Fontconfig::new().unwrap();
+    let font = fontconfig.find("sans-serif", None).unwrap();
+    let mut font = ttf_context.load_font(font.path, 128).unwrap();
+    let mut text_cache = HashMap::new();
 
     let new_array = || TargetArray {
         data: {
@@ -76,17 +97,20 @@ fn main() {
             let mut rng = rand::thread_rng();
 
             for _ in 0..SORT_ELEMENTS {
-                data.push(rng.gen_range(0..SORT_ELEMENTS));
+                let v: f64 = rng.sample(rand_distr::Normal::new(2.0, 1.0).unwrap());
+                let v = ((v * SORT_ELEMENTS as f64) / 4.0).clamp(0 as _, SORT_ELEMENTS as _);
+                data.push(v as _);
             }
 
-            let data = data
-                .into_iter()
-                .map(|x| Value::new(x as _))
-                .collect::<Vec<_>>();
+            let data = data.into_iter().map(|x| Value::new(x)).collect::<Vec<_>>();
 
             Arc::new(Mutex::new(data))
         },
         range: 0..SORT_ELEMENTS,
+    };
+
+    let mut context = Context {
+        phase_name: Arc::new(Mutex::new(String::new())),
     };
 
     let mut target_array = new_array();
@@ -110,13 +134,43 @@ fn main() {
                 } => {
                     target_array = new_array();
                     let array = target_array.clone();
-                    std::thread::spawn(|| quicksort(array));
+                    let context = context.clone();
+                    std::thread::spawn(|| quicksort(array, context));
                 }
                 _ => {}
             }
         }
+
         canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.clear();
+
+        let mut phase_name = context.phase_name.lock().unwrap().clone();
+        if phase_name.is_empty() {
+            phase_name = " ".into();
+        }
+
+        let phase_name = match text_cache.get(&phase_name) {
+            Some(x) => x,
+            None => {
+                let surface = font
+                    .render(&phase_name)
+                    .blended(Color::RGB(255, 255, 255))
+                    .unwrap();
+                let texture = texture_creator
+                    .create_texture_from_surface(&surface)
+                    .unwrap();
+                text_cache.insert(phase_name.clone(), texture);
+                text_cache.get(&phase_name).unwrap()
+            }
+        };
+        let query = phase_name.query();
+        canvas
+            .copy(
+                phase_name,
+                None,
+                Some(Rect::new(0, 0, query.width as _, query.height as _)),
+            )
+            .unwrap();
 
         canvas.set_draw_color(Color::RGB(255, 255, 255));
         let (width, height) = canvas.output_size().unwrap();
@@ -298,7 +352,7 @@ fn insertion_sort(data: TargetArray) {
 
 const PARTITION_BLOCK: usize = 128;
 
-fn block_partition(data: &TargetArray, pivot: c_int) -> usize {
+fn block_partition(data: &TargetArray, pivot: c_int, ctx: &Context) -> usize {
     let len = data.len();
 
     // ピボットより大きいか確認した場所までの index
@@ -315,6 +369,7 @@ fn block_partition(data: &TargetArray, pivot: c_int) -> usize {
     // ピボットより小さい数字の場所
     let mut right_offsets = [0; PARTITION_BLOCK];
 
+    ctx.set_phase("Block Partition");
     while right - left + 1 > 2 * PARTITION_BLOCK {
         if left_len == 0 {
             left_start = 0;
@@ -356,6 +411,7 @@ fn block_partition(data: &TargetArray, pivot: c_int) -> usize {
         // leftを行けるところまで動かしてみて、その間にピボットより大きい値があれば right_buffer の値を使ってスワップする
         // この操作でright_bufferを使い切ればいつもの処理に持ち込める
         println!("retaining right_buffer");
+        ctx.set_phase("Retain Right Buffer");
         'recovery: loop {
             if pivot < data.get(left) {
                 data.swap(left, right - right_offsets[right_start]);
@@ -376,6 +432,7 @@ fn block_partition(data: &TargetArray, pivot: c_int) -> usize {
 
     if left_len > 0 && right_len == 0 {
         println!("retaining left_buffer");
+        ctx.set_phase("Retain Left Buffer");
         'recovery: loop {
             if pivot > data.get(right) {
                 data.swap(right, left + left_offsets[left_start]);
@@ -394,6 +451,7 @@ fn block_partition(data: &TargetArray, pivot: c_int) -> usize {
         }
     }
 
+    ctx.set_phase("Hoare Partition");
     loop {
         while data.get(left as _) < pivot {
             left += 1;
@@ -412,14 +470,14 @@ fn block_partition(data: &TargetArray, pivot: c_int) -> usize {
     left
 }
 
-fn quicksort(data: TargetArray) {
+fn quicksort(data: TargetArray, ctx: Context) {
     let len = data.len();
 
     if len <= 1 {
         return;
     }
 
-    if len <= 32 {
+    if len <= 8 {
         insertion_sort(data);
         return;
     }
@@ -440,9 +498,9 @@ fn quicksort(data: TargetArray) {
         data.get(hi)
     };
 
-    let partition = block_partition(&data, pivot);
+    let partition = block_partition(&data, pivot, &ctx);
 
     let (a, b) = data.split_at(partition as _);
-    quicksort(a);
-    quicksort(b);
+    quicksort(a, ctx.clone());
+    quicksort(b, ctx);
 }

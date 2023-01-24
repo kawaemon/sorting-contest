@@ -81,14 +81,15 @@ fn test_sort(sort_fn: fn(&mut [i32])) {
     let mut rng = thread_rng();
 
     // fuzz
-    let mut data = (0..3000).collect::<Vec<c_int>>();
-    rng.fill(data.as_mut_slice());
+    for _ in 0..3000 {
+        let mut data = (0..3000).collect::<Vec<c_int>>();
+        rng.fill(data.as_mut_slice());
 
-    let mut origin = data.clone();
-    origin.sort_unstable();
+        let mut origin = data.clone();
+        origin.sort_unstable();
 
-    println!("{:?}", data);
-    sort_fn(&mut data);
+        sort_fn(&mut data);
 
-    assert_eq!(data, origin);
+        assert_eq!(data, origin);
+    }
 }

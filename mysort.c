@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 // ベンチマークにより最適な値を決定
@@ -11,6 +12,7 @@
 #define PARTITION_BLOCK 128
 
 #define MIN(i, j) (i > j ? j : i)
+#define MAX(i, j) (i > j ? i : j)
 #define SWAP(array, i, j)        \
     {                            \
         int tmp = (array)[i];    \
@@ -213,9 +215,41 @@ void quicksort(int *data, int len) {
     quicksort(data + partition, len - partition);
 }
 
-void mysort(int *s, int n) {
-    int *data = s;
-    int len = n;
+// NOTE: current implementation does NOT support negative inputs.
+void radixsort(int *data, int len) {
+    int *temp = malloc(sizeof(int) * len);
 
-    quicksort(data, len);
+    const int int_bits = sizeof(int) * 8;
+    int max_bits = 0;
+    for (int i = 0; i < len; i++) {
+        for (int bit = 0; bit < int_bits; bit++) {
+            if ((data[i] & (1 << bit)) != 0) {
+                max_bits = MAX(max_bits, bit);
+            }
+        }
+    }
+
+    for (int bit = 0; bit <= max_bits; bit++) {
+        int counter = 0;
+        for (int i = 0; i < len; i++) {
+            temp[i] = data[i];
+            if ((data[i] & (1 << bit)) == 0) {
+                counter += 1;
+            }
+        }
+        int index[] = {0, counter};
+        for (int i = 0; i < len; i++) {
+            if ((temp[i] & (1 << bit)) == 0) {
+                data[index[0]] = temp[i];
+                index[0] += 1;
+            } else {
+                data[index[1]] = temp[i];
+                index[1] += 1;
+            }
+        }
+    }
+
+    free(temp);
 }
+
+void mysort(int *s, int n) { quicksort(s, n); }

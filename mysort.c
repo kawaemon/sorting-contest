@@ -1,9 +1,8 @@
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <time.h>
 
 // ベンチマークにより最適な値を決定
 #define INSERTION_SORT_THRESHOLD 55
@@ -20,16 +19,8 @@
         (array)[j] = tmp;        \
     }
 
-#define DEBUG(...) printf(__VA_ARGS__);
-#define DEBUG_ARRAY(array, len)                                 \
-    {                                                           \
-        printf("[");                                            \
-        for (int i = 0; i < len; i++) printf("%d, ", array[i]); \
-        printf("]\n");                                          \
-    }
-
-void insertion_sort(int *data, int n) {
-    for (int i = 1; i < n; i++) {
+void insertion_sort(int *data, int len) {
+    for (int i = 1; i < len; i++) {
         if (data[i - 1] > data[i]) {
             // data[i] を適切な位置になるまで左にスライド
             // スワップは遅いので回避する
@@ -51,6 +42,33 @@ void insertion_sort(int *data, int n) {
     }
 }
 
+static inline void sift_down(int *data, int len, int node) {
+    while (true) {
+        int child = 2 * node + 1;
+        if (child >= len) {
+            break;
+        }
+        if (child + 1 < len && data[child] < data[child + 1]) {
+            child += 1;
+        }
+        if (data[node] >= data[child]) {
+            break;
+        }
+        SWAP(data, node, child)
+        node = child;
+    }
+}
+
+void heapsort(int *data, int len) {
+    for (int i = (len / 2) - 1; i >= 0; i--) {
+        sift_down(data, len, i);
+    }
+    for (int i = len - 1; i >= 1; i--) {
+        SWAP(data, 0, i);
+        sift_down(data, i, 0);
+    }
+}
+
 // https://xoshiro.di.unimi.it/xoshiro256plusplus.c
 static uint64_t rand_state[4] = {798574385, 328473291321, 459843759845,
                                  48327498239434};
@@ -58,7 +76,7 @@ static inline uint64_t rotl(const uint64_t x, int k) {
     return (x << k) | (x >> (64 - k));
 }
 
-uint64_t next_rand(void) {
+static inline uint64_t next_rand(void) {
     const uint64_t result =
         rotl(rand_state[0] + rand_state[3], 23) + rand_state[0];
 
@@ -78,7 +96,7 @@ uint64_t next_rand(void) {
 
 // Block Quicksort Partition, hoare finish
 // https://drops.dagstuhl.de/opus/volltexte/2016/6389/pdf/LIPIcs-ESA-2016-38.pdf
-int block_partition(int *data, int data_len, int pivot) {
+static inline int block_partition(int *data, int data_len, int pivot) {
     int l_offsets[PARTITION_BLOCK];
     int r_offsets[PARTITION_BLOCK];
     int l_start = 0;
@@ -176,7 +194,7 @@ tiny:
 }
 
 // https://en.wikipedia.org/wiki/Quicksort
-void quicksort(int *data, int len) {
+void quicksort(int *data, int len, int recur_limit) {
     // select 7 as pivot
     // 8 4 3 7 6 5 2 1
     // ↑ HI          ↑ LO  swap
@@ -200,6 +218,11 @@ void quicksort(int *data, int len) {
         return;
     }
 
+    if (recur_limit == 0) {
+        heapsort(data, len);
+        return;
+    }
+
     // ピボットを選択する
     // ピボットを固定値にすると、無限再帰が起こる可能性があるので、
     // 高速なランダム関数を用いてランダムにピボットを決定する。
@@ -211,8 +234,8 @@ void quicksort(int *data, int len) {
 
     // 短い方だけに再帰するほうが使うスペースが節約できるが
     // 速度に影響はないので行わない。
-    quicksort(data, partition);
-    quicksort(data + partition, len - partition);
+    quicksort(data, partition, recur_limit - 1);
+    quicksort(data + partition, len - partition, recur_limit - 1);
 }
 
 // NOTE: current implementation does NOT support negative inputs.
@@ -252,4 +275,11 @@ void radixsort(int *data, int len) {
     free(temp);
 }
 
-void mysort(int *s, int n) { quicksort(s, n); }
+void mysort(int *s, int n) {
+    if (n <= 1) {
+        return;
+    }
+
+    int recur_limit = ((int)log2(n)) * 2;
+    quicksort(s, n, recur_limit);
+}

@@ -44,11 +44,16 @@ fn bench(c: &mut Criterion) {
 criterion_group!(benches, bench);
 criterion_main!(benches);
 
+#[cfg(test)]
 #[test]
 fn insertion_sort_test() {
     test_sort(sorting_contest::insertion_sort);
 }
-
+#[cfg(test)]
+#[test]
+fn heapsort_test() {
+    test_sort(sorting_contest::heapsort);
+}
 #[cfg(test)]
 #[test]
 fn mysort_test() {

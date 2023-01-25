@@ -3,6 +3,9 @@ use rand::Rng;
 use std::ffi::c_int;
 use std::time::Instant;
 
+// taken from MSVC
+const RAND_MAX: c_int = 32767;
+
 fn mysort(data: &mut [c_int]) {
     extern "C" {
         fn mysort(data: *mut c_int, len: c_int);
@@ -20,8 +23,10 @@ fn bench_caller(c: &mut Criterion, data_size: i32) {
                 let mut rng = rand::thread_rng();
                 let mut bench_data = (0..iterations)
                     .map(|_| {
-                        let mut data = (0..data_size).collect::<Vec<_>>();
-                        rng.fill(data.as_mut_slice());
+                        let mut data = Vec::with_capacity(data_size as usize);
+                        for _ in 0..data_size {
+                            data.push(rng.gen_range(0..RAND_MAX) % 1000)
+                        }
                         data
                     })
                     .collect::<Vec<_>>();

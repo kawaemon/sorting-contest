@@ -5,5 +5,6 @@ fn main() {
         .compiler("/usr/bin/clang")
         .file("mysort.c")
         .opt_level(2)
+        .debug(true)
         .compile("mysort");
 }

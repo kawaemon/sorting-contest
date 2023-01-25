@@ -3,12 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-// ベンチマークにより最適な値を決定
-#define INSERTION_SORT_THRESHOLD 55
-
-// 論文で推奨された値を指定
-#define PARTITION_BLOCK 128
+#include <string.h>
 
 #define MIN(i, j) (i > j ? j : i)
 #define MAX(i, j) (i > j ? i : j)
@@ -94,6 +89,9 @@ static inline uint64_t next_rand(void) {
     return result;
 }
 
+// 論文で推奨された値を指定
+#define PARTITION_BLOCK 128
+
 // Block Quicksort Partition, hoare finish
 // https://drops.dagstuhl.de/opus/volltexte/2016/6389/pdf/LIPIcs-ESA-2016-38.pdf
 static inline int block_partition(int *data, int data_len, int pivot) {
@@ -156,9 +154,7 @@ static inline int block_partition(int *data, int data_len, int pivot) {
             }
             l += 1;
         }
-    }
-
-    if (l_len > 0 && r_len == 0) {
+    } else if (l_len > 0 && r_len == 0) {
         while (true) {
             if (pivot > data[r]) {
                 SWAP(data, r, l + l_offsets[l_start]);
@@ -192,6 +188,9 @@ tiny:
     }
     return l;
 }
+
+// ベンチマークにより最適な値を決定
+#define INSERTION_SORT_THRESHOLD 55
 
 // https://en.wikipedia.org/wiki/Quicksort
 void quicksort(int *data, int len, int recur_limit) {
@@ -275,11 +274,46 @@ void radixsort(int *data, int len) {
     free(temp);
 }
 
+#define BUCKET_SORT_MAX_NUM 128000  // 512 KiB
+
+void counting_sort(int *data, int len) {
+    int count[BUCKET_SORT_MAX_NUM];
+    memset(count, 0, sizeof(count));
+
+    for (int i = 0; i < len; i++) {
+        count[data[i]] += 1;
+    }
+
+    int data_index = 0;
+    for (int i = 0; i < BUCKET_SORT_MAX_NUM; i++) {
+        for (int j = 0; j < count[i]; j++) {
+            data[data_index++] = i;
+        }
+    }
+}
+
+#define INSERTION_SORT_ONLY_THRESHOLD 256
+
 void mysort(int *s, int n) {
-    if (n <= 1) {
+    int *data = s;
+    int len = n;
+
+    if (len <= 1) {
         return;
     }
 
-    int recur_limit = ((int)log2(n)) * 2;
-    quicksort(s, n, recur_limit);
+    if (len <= INSERTION_SORT_ONLY_THRESHOLD) {
+        insertion_sort(data, len);
+        return;
+    }
+
+    for (int i = 0; i < n; i++) {
+        if (data[i] < 0 || data[i] > BUCKET_SORT_MAX_NUM) {
+            int recur_limit = ((int)log2(n)) * 2;
+            quicksort(data, len, recur_limit);
+            return;
+        }
+    }
+
+    counting_sort(s, n);
 }

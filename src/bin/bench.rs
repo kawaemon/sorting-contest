@@ -27,9 +27,21 @@ fn bench_caller(c: &mut Criterion, data_size: i32) {
                 let start = Instant::now();
                 for i in 0..iterations {
                     let data = &mut bench_data[i as usize];
-                    black_box(mysort(data));
+                    mysort(data);
                 }
-                start.elapsed()
+                let time = start.elapsed();
+
+                for b in bench_data {
+                    let mut before = b[0];
+                    for &e in &b[1..] {
+                        if before > e {
+                            panic!("verifying failed: array is not sorted: {b:#?}");
+                        }
+                        before = e;
+                    }
+                }
+
+                time
             })
         },
     );

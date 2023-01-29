@@ -1,6 +1,7 @@
 #![allow(dead_code)]
+#![allow(clippy::needless_range_loop)]
+
 use std::collections::HashMap;
-use std::mem::size_of;
 use std::ops::{Deref, Range};
 use std::{
     ffi::c_int,
@@ -103,7 +104,7 @@ fn main() {
                 data.push(v as _);
             }
 
-            let data = data.into_iter().map(|x| Value::new(x)).collect::<Vec<_>>();
+            let data = data.into_iter().map(Value::new).collect::<Vec<_>>();
 
             Arc::new(Mutex::new(data))
         },
@@ -535,13 +536,13 @@ fn heapsort(data: TargetArray) {
 fn radixsort(data: TargetArray, _context: Context) {
     let mut temp = vec![0; data.len()];
 
-    let int_bits = size_of::<c_int>() * 8;
+    let int_bits = c_int::BITS;
     let mut max_bits = 0u32;
     for i in 0..data.len() {
         let value = data.get(i);
         for bit in 0..int_bits {
             if (value & (1 << bit)) != 0 {
-                max_bits = max_bits.max(bit as u32);
+                max_bits = max_bits.max(bit);
             }
         }
     }

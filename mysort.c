@@ -64,6 +64,7 @@ void heapsort(int *data, int len) {
     }
 }
 
+// https://prng.di.unimi.it/
 // https://xoshiro.di.unimi.it/xoshiro256plusplus.c
 static uint64_t rand_state[4] = {798574385, 328473291321, 459843759845,
                                  48327498239434};
@@ -193,7 +194,7 @@ tiny:
 #define INSERTION_SORT_THRESHOLD 55
 
 // https://en.wikipedia.org/wiki/Quicksort
-void quicksort(int *data, int len, int recur_limit) {
+static inline void quicksort_internal(int *data, int len, int recur_limit) {
     // select 7 as pivot
     // 8 4 3 7 6 5 2 1
     // ↑ HI          ↑ LO  swap
@@ -233,8 +234,12 @@ void quicksort(int *data, int len, int recur_limit) {
 
     // 短い方だけに再帰するほうが使うスペースが節約できるが
     // 速度に影響はないので行わない。
-    quicksort(data, partition, recur_limit - 1);
-    quicksort(data + partition, len - partition, recur_limit - 1);
+    quicksort_internal(data, partition, recur_limit - 1);
+    quicksort_internal(data + partition, len - partition, recur_limit - 1);
+}
+
+void quicksort(int *data, int len) {
+    quicksort_internal(data, len, log2(len) * 2);
 }
 
 // NOTE: current implementation does NOT support negative inputs.
@@ -274,20 +279,27 @@ void radixsort(int *data, int len) {
     free(temp);
 }
 
-#define BUCKET_SORT_MAX_NUM 128000  // 512 KiB
+// MUST BE AN EVEN NUMBER.
+#define COUNTING_SORT_ELEMENT_SIZE 128000  // 512 KiB
+// elements: 4
+// count:   0   1  2  3
+//                 ↑ center
+// value:  -2  -1  0  1
 
 void counting_sort(int *data, int len) {
-    int count[BUCKET_SORT_MAX_NUM];
+    int count[COUNTING_SORT_ELEMENT_SIZE];
     memset(count, 0, sizeof(count));
 
+    int *center = &count[COUNTING_SORT_ELEMENT_SIZE / 2];
     for (int i = 0; i < len; i++) {
-        count[data[i]] += 1;
+        center[data[i]] += 1;
     }
 
     int data_index = 0;
-    for (int i = 0; i < BUCKET_SORT_MAX_NUM; i++) {
+    for (int i = 0; i < COUNTING_SORT_ELEMENT_SIZE; i++) {
+        int value = i - (COUNTING_SORT_ELEMENT_SIZE / 2);
         for (int j = 0; j < count[i]; j++) {
-            data[data_index++] = i;
+            data[data_index++] = value;
         }
     }
 }
@@ -302,18 +314,18 @@ void mysort(int *s, int n) {
         return;
     }
 
-    if (len <= INSERTION_SORT_ONLY_THRESHOLD) {
-        insertion_sort(data, len);
+    if (len <= 1800) {
+        quicksort(data, len);
         return;
     }
 
-    for (int i = 0; i < n; i++) {
-        if (data[i] < 0 || data[i] > BUCKET_SORT_MAX_NUM) {
-            int recur_limit = ((int)log2(n)) * 2;
-            quicksort(data, len, recur_limit);
+    for (int i = 0; i < len; i++) {
+        if (!((-(COUNTING_SORT_ELEMENT_SIZE / 2)) <= data[i] &&
+              data[i] < (COUNTING_SORT_ELEMENT_SIZE / 2))) {
+            quicksort(data, len);
             return;
         }
     }
 
-    counting_sort(s, n);
+    counting_sort(data, len);
 }

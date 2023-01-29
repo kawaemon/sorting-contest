@@ -1,6 +1,7 @@
 #![allow(dead_code)]
+#![allow(clippy::needless_range_loop)]
+
 use std::collections::HashMap;
-use std::mem::size_of;
 use std::ops::{Deref, Range};
 use std::{
     ffi::c_int,
@@ -67,10 +68,10 @@ impl Context {
     }
 }
 
-const SORT_ELEMENTS: usize = 100;
+const SORT_ELEMENTS: usize = 1300;
 const INSERTION_SORT_THRESHOLD: usize = 8;
 const MARK_SHOWN_FRAMES: usize = 3;
-const MEM_OP_DELAY: Duration = Duration::from_millis(10);
+const MEM_OP_DELAY: Duration = Duration::from_millis(1);
 
 fn main() {
     let sdl_context = sdl2::init().unwrap();
@@ -103,7 +104,7 @@ fn main() {
                 data.push(v as _);
             }
 
-            let data = data.into_iter().map(|x| Value::new(x)).collect::<Vec<_>>();
+            let data = data.into_iter().map(Value::new).collect::<Vec<_>>();
 
             Arc::new(Mutex::new(data))
         },
@@ -136,7 +137,7 @@ fn main() {
                     target_array = new_array();
                     let array = target_array.clone();
                     let context = context.clone();
-                    std::thread::spawn(|| radixsort(array, context));
+                    std::thread::spawn(|| heapsort(array, context));
                 }
                 _ => {}
             }
@@ -374,7 +375,7 @@ fn block_partition(data: &TargetArray, pivot: c_int, ctx: &Context) -> usize {
 
     while right - left + 1 > 2 * PARTITION_BLOCK {
         if left_len == 0 {
-            ctx.set_phase("Block Partition: correct left");
+            ctx.set_phase("Block Partition: collect left");
             left_start = 0;
             for i in 0..PARTITION_BLOCK {
                 left_offsets[left_len] = i;
@@ -382,7 +383,7 @@ fn block_partition(data: &TargetArray, pivot: c_int, ctx: &Context) -> usize {
             }
         }
         if right_len == 0 {
-            ctx.set_phase("Block Partition: correct right");
+            ctx.set_phase("Block Partition: collect right");
             right_start = 0;
             for i in 0..PARTITION_BLOCK {
                 right_offsets[right_len] = i;
@@ -470,29 +471,40 @@ fn block_partition(data: &TargetArray, pivot: c_int, ctx: &Context) -> usize {
     left
 }
 
-fn quicksort(data: TargetArray, ctx: Context) {
+fn introsort(data: TargetArray, ctx: Context) {
     let len = data.len();
+    recur(data, ctx, (2.0 * (len as f64).log2()) as _);
 
-    if len <= 1 {
-        return;
+    fn recur(data: TargetArray, ctx: Context, recur_limit: usize) {
+        let len = data.len();
+
+        if len <= 1 {
+            return;
+        }
+
+        if len <= INSERTION_SORT_THRESHOLD {
+            insertion_sort(data);
+            return;
+        }
+
+        if recur_limit == 0 {
+            heapsort(data, ctx);
+            return;
+        }
+
+        let mut rng = rand::thread_rng();
+        let pivot = data.get(rng.gen_range(0..data.len()));
+        let partition = block_partition(&data, pivot, &ctx);
+
+        let (a, b) = data.split_at(partition as _);
+        recur(a, ctx.clone(), recur_limit - 1);
+        recur(b, ctx, recur_limit - 1);
     }
-
-    if len <= INSERTION_SORT_THRESHOLD {
-        insertion_sort(data);
-        return;
-    }
-
-    let mut rng = rand::thread_rng();
-    let pivot = data.get(rng.gen_range(0..data.len()));
-    let partition = block_partition(&data, pivot, &ctx);
-
-    let (a, b) = data.split_at(partition as _);
-    quicksort(a, ctx.clone());
-    quicksort(b, ctx);
 }
 
-// copy-pasted from rust stdlib implementation
-fn heapsort(data: TargetArray) {
+// copy-pasted and modified from rust stdlib implementation
+// https://github.com/rust-lang/rust/blob/d117135f5a9b69ee3adfb1918aa25616758bf692/library/core/src/slice/sort.rs#L187
+fn heapsort(data: TargetArray, ctx: Context) {
     let sift_down = |v: &TargetArray, mut node| {
         loop {
             // Children of `node`.
@@ -519,12 +531,12 @@ fn heapsort(data: TargetArray) {
 
     let len = data.len();
 
-    // Build the heap in linear time.
+    ctx.set_phase("build the heap");
     for i in (0..len / 2).rev() {
         sift_down(&data, i);
     }
 
-    // Pop maximal elements from the heap.
+    ctx.set_phase("pop maximum value from heap");
     for i in (1..len).rev() {
         data.swap(0, i);
         let (a, _) = data.split_at(i);
@@ -535,13 +547,13 @@ fn heapsort(data: TargetArray) {
 fn radixsort(data: TargetArray, _context: Context) {
     let mut temp = vec![0; data.len()];
 
-    let int_bits = size_of::<c_int>() * 8;
+    let int_bits = c_int::BITS;
     let mut max_bits = 0u32;
     for i in 0..data.len() {
         let value = data.get(i);
         for bit in 0..int_bits {
             if (value & (1 << bit)) != 0 {
-                max_bits = max_bits.max(bit as u32);
+                max_bits = max_bits.max(bit);
             }
         }
     }

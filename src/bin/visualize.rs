@@ -1,18 +1,26 @@
 #![allow(dead_code)]
 #![allow(clippy::needless_range_loop)]
 
-use std::collections::HashMap;
-use std::ops::{Deref, Range};
-use std::{
-    ffi::c_int,
-    sync::{Arc, Mutex},
-    time::Duration,
+use {
+    fontconfig::Fontconfig,
+    rand::Rng,
+    sdl2::{
+        event::Event,
+        keyboard::Keycode,
+        pixels::Color,
+        rect::Rect,
+        render::{Canvas, Texture, TextureCreator},
+        ttf::Font,
+        video::{Window, WindowContext},
+    },
+    std::{
+        collections::HashMap,
+        ffi::c_int,
+        ops::{Deref, Range},
+        sync::{Arc, Mutex},
+        time::Duration,
+    },
 };
-
-use fontconfig::Fontconfig;
-use rand::Rng;
-use sdl2::rect::Rect;
-use sdl2::{event::Event, keyboard::Keycode, pixels::Color};
 
 #[derive(Debug)]
 enum MarkType {
@@ -60,11 +68,32 @@ impl Value {
 #[derive(Clone, Debug)]
 struct Context {
     phase_name: Arc<Mutex<String>>,
+    compare: Arc<Mutex<usize>>,
+    swap: Arc<Mutex<usize>>,
+    write: Arc<Mutex<usize>>,
 }
 
 impl Context {
+    fn new() -> Self {
+        Self {
+            phase_name: Arc::new(Mutex::new(String::new())),
+            compare: Arc::new(Mutex::new(0)),
+            swap: Arc::new(Mutex::new(0)),
+            write: Arc::new(Mutex::new(0)),
+        }
+    }
     fn set_phase(&self, phase: impl Into<String>) {
         *self.phase_name.lock().unwrap() = phase.into();
+    }
+
+    fn compare(&self) {
+        *self.compare.lock().unwrap() += 1;
+    }
+    fn swap(&self) {
+        *self.swap.lock().unwrap() += 1;
+    }
+    fn write(&self) {
+        *self.write.lock().unwrap() += 1;
     }
 }
 
@@ -85,13 +114,27 @@ fn main() {
         .build()
         .unwrap();
 
-    let mut canvas = window.into_canvas().build().unwrap();
+    let canvas = window.into_canvas().build().unwrap();
     let texture_creator = canvas.texture_creator();
 
     let fontconfig = Fontconfig::new().unwrap();
     let font = fontconfig.find("sans-serif", None).unwrap();
     let font = ttf_context.load_font(font.path, 30).unwrap();
-    let mut text_cache = HashMap::new();
+    let text_cache = HashMap::new();
+
+    struct Renderer<'ttf, 'font, 'tc> {
+        canvas: Canvas<Window>,
+        font: Font<'ttf, 'font>,
+        texture_creator: &'tc TextureCreator<WindowContext>,
+        text_cache: HashMap<String, Texture<'tc>>,
+    }
+
+    let mut renderer = Renderer {
+        canvas,
+        font,
+        texture_creator: &texture_creator,
+        text_cache,
+    };
 
     let new_array = || TargetArray {
         data: {
@@ -111,15 +154,13 @@ fn main() {
         range: 0..SORT_ELEMENTS,
     };
 
-    let context = Context {
-        phase_name: Arc::new(Mutex::new(String::new())),
-    };
+    let context = Context::new();
 
     let mut target_array = new_array();
 
-    canvas.set_draw_color(Color::RGB(0, 0, 0));
-    canvas.clear();
-    canvas.present();
+    renderer.canvas.set_draw_color(Color::RGB(0, 0, 0));
+    renderer.canvas.clear();
+    renderer.canvas.present();
 
     let mut event_pump = sdl_context.event_pump().unwrap();
     'running: loop {
@@ -143,42 +184,67 @@ fn main() {
             }
         }
 
-        canvas.set_draw_color(Color::RGB(0, 0, 0));
-        canvas.clear();
+        renderer.canvas.set_draw_color(Color::RGB(0, 0, 0));
+        renderer.canvas.clear();
 
-        let mut phase_name = context.phase_name.lock().unwrap().clone();
-        if phase_name.is_empty() {
-            phase_name = " ".into();
+        enum Align {
+            Left,
+            Right,
+        }
+        use Align::*;
+
+        impl<'a, 'b, 'tc> Renderer<'a, 'b, 'tc> {
+            fn render_text(&mut self, mut text: &str, x: i32, y: i32, align: Align) {
+                if text.is_empty() {
+                    text = " ";
+                }
+
+                let texture = match self.text_cache.get(text) {
+                    Some(x) => x,
+                    None => {
+                        let surface = self
+                            .font
+                            .render(text)
+                            .blended(Color::RGB(255, 255, 255))
+                            .unwrap();
+                        let texture = self
+                            .texture_creator
+                            .create_texture_from_surface(&surface)
+                            .unwrap();
+                        self.text_cache.insert(text.to_owned(), texture);
+                        self.text_cache.get(text).unwrap()
+                    }
+                };
+
+                let query = texture.query();
+                let rect = match align {
+                    Left => Rect::new(x, y, query.width, query.height),
+                    Right => Rect::new(x - (query.width as i32), y, query.width, query.height),
+                };
+                self.canvas.copy(texture, None, Some(rect)).unwrap();
+            }
         }
 
-        let phase_name = match text_cache.get(&phase_name) {
-            Some(x) => x,
-            None => {
-                let surface = font
-                    .render(&phase_name)
-                    .blended(Color::RGB(255, 255, 255))
-                    .unwrap();
-                let texture = texture_creator
-                    .create_texture_from_surface(&surface)
-                    .unwrap();
-                text_cache.insert(phase_name.clone(), texture);
-                text_cache.get(&phase_name).unwrap()
-            }
-        };
-        let query = phase_name.query();
-        canvas
-            .copy(
-                phase_name,
-                None,
-                Some(Rect::new(0, 0, query.width as _, query.height as _)),
-            )
-            .unwrap();
+        let phase_name = context.phase_name.lock().unwrap().clone();
+        renderer.render_text(&phase_name, 0, 0, Left);
 
-        canvas.set_draw_color(Color::RGB(255, 255, 255));
-        let (width, height) = canvas.output_size().unwrap();
+        renderer.canvas.set_draw_color(Color::RGB(255, 255, 255));
+        let (width, height) = renderer.canvas.output_size().unwrap();
+        let bar_height_unit = height as f64 / SORT_ELEMENTS as f64;
+
+        renderer.render_text(
+            &format!(
+                "compare: {}, swap: {}",
+                context.compare.lock().unwrap(),
+                context.swap.lock().unwrap()
+            ),
+            width as _,
+            0,
+            Right,
+        );
+
         {
             let mut array = target_array.data.lock().unwrap();
-            let bar_height_unit = height as f64 / SORT_ELEMENTS as f64;
             let bar_width = width / array.len() as u32;
             for (i, data) in array.iter_mut().enumerate() {
                 let bar_color = match data.mark.ty {
@@ -187,7 +253,7 @@ fn main() {
                     MarkType::Write => Color::RGB(255, 0, 0),
                     MarkType::Pivot => Color::RGB(255, 0, 255),
                 };
-                canvas.set_draw_color(bar_color);
+                renderer.canvas.set_draw_color(bar_color);
                 data.mark.frames += 1;
                 if data.mark.frames >= MARK_SHOWN_FRAMES {
                     data.mark.reset();
@@ -199,11 +265,11 @@ fn main() {
                     bar_width,
                     height as _,
                 );
-                canvas.fill_rect(r).unwrap();
+                renderer.canvas.fill_rect(r).unwrap();
             }
         }
 
-        canvas.present();
+        renderer.canvas.present();
         std::thread::sleep(Duration::from_secs_f64(1.0 / 60.0));
     }
 }
@@ -453,11 +519,15 @@ fn block_partition(data: &TargetArray, pivot: c_int, ctx: &Context) -> usize {
 
     loop {
         ctx.set_phase("Hoare Partition: Left");
+        ctx.compare();
         while data.get(left as _) < pivot {
+            ctx.compare();
             left += 1;
         }
         ctx.set_phase("Hoare Partition: Right");
+        ctx.compare();
         while data.get(right as _) > pivot {
+            ctx.compare();
             right -= 1;
         }
         if left >= right {
@@ -519,11 +589,13 @@ fn heapsort(data: TargetArray, ctx: Context) {
             }
 
             // Stop if the invariant holds at `node`.
+            ctx.compare();
             if v.get(node) >= v.get(child) {
                 break;
             }
 
             // Swap `node` with the greater child, move one step down, and continue sifting.
+            ctx.swap();
             v.swap(node, child);
             node = child;
         }
@@ -538,6 +610,7 @@ fn heapsort(data: TargetArray, ctx: Context) {
 
     ctx.set_phase("pop maximum value from heap");
     for i in (1..len).rev() {
+        ctx.swap();
         data.swap(0, i);
         let (a, _) = data.split_at(i);
         sift_down(&a, 0);

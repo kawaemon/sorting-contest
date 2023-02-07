@@ -95,11 +95,16 @@ impl Context {
     fn write(&self) {
         *self.write.lock().unwrap() += 1;
     }
+    fn reset(&self) {
+        *self.compare.lock().unwrap() = 0;
+        *self.swap.lock().unwrap() = 0;
+        *self.write.lock().unwrap() = 0;
+    }
 }
 
-const SORT_ELEMENTS: usize = 1300;
+const SORT_ELEMENTS: usize = 1500;
 const INSERTION_SORT_THRESHOLD: usize = 8;
-const MARK_SHOWN_FRAMES: usize = 3;
+const MARK_SHOWN_FRAMES: usize = 2;
 const MEM_OP_DELAY: Duration = Duration::from_millis(1);
 
 fn main() {
@@ -147,8 +152,7 @@ fn main() {
                 data.push(v as _);
             }
 
-            let data = data.into_iter().map(Value::new).collect::<Vec<_>>();
-
+            let data = data.into_iter().map(Value::new).collect();
             Arc::new(Mutex::new(data))
         },
         range: 0..SORT_ELEMENTS,
@@ -178,7 +182,17 @@ fn main() {
                     target_array = new_array();
                     let array = target_array.clone();
                     let context = context.clone();
-                    std::thread::spawn(|| heapsort(array, context));
+                    std::thread::spawn(move || {
+                        context.reset();
+                        bucket_sort(array.clone(), context);
+                        dbg!(array
+                            .data
+                            .lock()
+                            .unwrap()
+                            .iter()
+                            .map(|x| x.value)
+                            .collect::<Vec<_>>());
+                    });
                 }
                 _ => {}
             }
@@ -205,7 +219,7 @@ fn main() {
                         let surface = self
                             .font
                             .render(text)
-                            .blended(Color::RGB(255, 255, 255))
+                            .blended(Color::RGB(255, 0, 0))
                             .unwrap();
                         let texture = self
                             .texture_creator
@@ -230,22 +244,14 @@ fn main() {
 
         renderer.canvas.set_draw_color(Color::RGB(255, 255, 255));
         let (width, height) = renderer.canvas.output_size().unwrap();
-        let bar_height_unit = height as f64 / SORT_ELEMENTS as f64;
-
-        renderer.render_text(
-            &format!(
-                "compare: {}, swap: {}",
-                context.compare.lock().unwrap(),
-                context.swap.lock().unwrap()
-            ),
-            width as _,
-            0,
-            Right,
-        );
 
         {
             let mut array = target_array.data.lock().unwrap();
             let bar_width = width / array.len() as u32;
+            let min = array.iter().map(|x| x.value).min().unwrap();
+            let max = array.iter().map(|x| x.value).max().unwrap();
+            let diff = min.abs_diff(max) + 1;
+            let bar_height_unit = height as f64 / diff as f64;
             for (i, data) in array.iter_mut().enumerate() {
                 let bar_color = match data.mark.ty {
                     MarkType::None => Color::RGB(255, 255, 255),
@@ -260,14 +266,24 @@ fn main() {
                 }
                 let r = Rect::new(
                     bar_width as i32 * i as i32,
-                    // TODO: SORT_ELEMENTS here should be (max - min) of array
-                    (bar_height_unit * (SORT_ELEMENTS as i32 - data.value) as f64) as _,
+                    (bar_height_unit * (data.value.abs_diff(diff as i32)) as f64) as _,
                     bar_width,
                     height as _,
                 );
                 renderer.canvas.fill_rect(r).unwrap();
             }
         }
+
+        renderer.render_text(
+            &format!(
+                "compare: {}, swap: {}",
+                context.compare.lock().unwrap(),
+                context.swap.lock().unwrap()
+            ),
+            width as _,
+            0,
+            Right,
+        );
 
         renderer.canvas.present();
         std::thread::sleep(Duration::from_secs_f64(1.0 / 60.0));
@@ -569,6 +585,72 @@ fn introsort(data: TargetArray, ctx: Context) {
         let (a, b) = data.split_at(partition as _);
         recur(a, ctx.clone(), recur_limit - 1);
         recur(b, ctx, recur_limit - 1);
+    }
+}
+
+fn school_quicksort(data: TargetArray, ctx: Context) {
+    recur(&data, 0, data.len() - 1, &ctx);
+    fn recur(data: &TargetArray, left: usize, right: usize, ctx: &Context) {
+        let mut i = left;
+        let mut j = right;
+
+        let pivot = data.get((left + right) / 2);
+        while i <= j {
+            while {
+                ctx.compare();
+                data.get(i) < pivot
+            } {
+                i += 1;
+            }
+            while {
+                ctx.compare();
+                data.get(j) > pivot
+            } {
+                j -= 1;
+            }
+            if i <= j {
+                if i < j {
+                    ctx.swap();
+                    data.swap(i, j);
+                }
+                i += 1;
+                j -= 1;
+            }
+        }
+
+        if left < j {
+            recur(data, left, j, ctx)
+        }
+        if i < right {
+            recur(data, i, right, ctx)
+        }
+    }
+}
+
+fn bucket_sort(data: TargetArray, ctx: Context) {
+    let (min, diff) = {
+        let data = data.data.lock().unwrap();
+        let iter = data.iter().map(|x| x.value);
+        let min = iter.clone().min().unwrap();
+        let max = iter.clone().max().unwrap();
+        let diff = min.abs_diff(max);
+        assert!(0 <= min);
+        assert!(diff <= 128_000); // limiting the length of counter array to 128K elements
+        (min, diff + 1)
+    };
+
+    let mut counter = vec![0; diff as usize];
+    for i in 0..data.len() {
+        counter[(data.get(i) - min) as usize] += 1;
+    }
+
+    let mut index = 0;
+    for i in 0..diff {
+        let count = counter[i as usize];
+        for j in 0..count {
+            data.set(index, min + i as i32);
+            index += 1;
+        }
     }
 }
 
